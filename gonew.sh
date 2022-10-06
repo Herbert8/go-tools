@@ -6,6 +6,19 @@
 # https://www.cnblogs.com/codexiaoyi/p/14961852.html
 # https://github.com/go-kratos/kratos/blob/main/README_zh.md
 
+
+cat << EOF
+ __^__                                                                            __^__
+( ___ )--------------------------------------------------------------------------( ___ )
+ | / | Standard Go Project Layout Reference:                                      | \ |
+ | / |   https://github.com/golang-standards/project-layout/blob/master/README.md | \ |
+ | / |   https://zhuanlan.zhihu.com/p/346573562                                   | \ |
+ | / |   https://www.cnblogs.com/codexiaoyi/p/14961852.html                       | \ |
+ |___|                                                                            |___|
+(_____)--------------------------------------------------------------------------(_____)
+
+EOF
+
 set -eu
 
 PROJECT_ROOT=${1:-.}
@@ -28,7 +41,7 @@ mkdir -p "$PROJECT_ROOT" # && cd "$PROJECT_ROOT" || { echo "Create '$PROJECT_ROO
 mkdir -p "$PROJECT_ROOT/cmd/app"
 mkdir -p "$PROJECT_ROOT/internal"
 mkdir -p "$PROJECT_ROOT/pkg"
-mkdir -p "$PROJECT_ROOT/vendor"
+# mkdir -p "$PROJECT_ROOT/vendor"
 
 # Service Application Directories
 mkdir -p "$PROJECT_ROOT/api"
