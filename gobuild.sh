@@ -1,23 +1,61 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 
 set -eu
 
-COMPLETE_BUILD_ALL=''
+print_colored_text () {
+    local attrs=''
+    [[ "$#" -gt "1" ]] && for (( i=2;i<=$#;i++ )); do
+        attrs=${attrs}${!i}';'
+    done
+    attrs=${attrs%;}
+    local msg=${1-}
+    echo -ne "\033[0;${attrs}m${msg}"
+}
+
+
+FORCE_REBUILD=''
+MULTI_PLATFORM_BUILD=''
+
+show_help () {
+    cat << EOF
+NAME:
+   Go Build - A handy Go language build script.
+
+USAGE:
+   gobuild [-a] [-m]
+
+OPTIONS:
+   -a               Force rebuilding of packages that are already up-to-date.
+   -m               Multi-platform build.
+   -h               Show help message.
+EOF
+}
 
 # 处理脚本参数
 # -a 彻底构建，包括构建所有支持的平台，并且强制构建未变更的内容
-while getopts "a" opt_name # 通过循环，使用 getopts，按照指定参数列表进行解析，参数名存入 opt_name
+while getopts "amh" opt_name # 通过循环，使用 getopts，按照指定参数列表进行解析，参数名存入 opt_name
 do
     case "$opt_name" in # 根据参数名判断处理分支
         'a') # -a 参数
-            COMPLETE_BUILD_ALL=1
+            FORCE_REBUILD=1
             ;;
+        'm') # -m 参数
+            MULTI_PLATFORM_BUILD=1
+            ;;
+        'h') # 显示帮助
+            show_help
+            exit 1
+            ;;
+
         ?) # 其它未指定名称参数
             echo "Unknown argument(s)."
             exit 2
             ;;
     esac
 done
+
+clear
 
 # 删除已解析的参数
 shift $((OPTIND-1))
@@ -106,25 +144,55 @@ proj_name=$(basename "$GO_MOD_ROOT")
 # 定义基本颜色值
 readonly TEXT_RESET_ALL_ATTRIBUTES=0
 readonly TEXT_BOLD_BRIGHT=1
-readonly TEXT_UNDERLINED=4
+# readonly TEXT_UNDERLINED=4
+readonly COLOR_F_LIGHT_RED=91
 readonly COLOR_F_LIGHT_GREEN=92
-readonly COLOR_F_LIGHT_YELLOW=93
+# readonly COLOR_F_LIGHT_YELLOW=93
 
-# 定义输出颜色
-# readonly STYLE_TITLE="\033[${TEXT_RESET_ALL_ATTRIBUTES}m\033[${TEXT_BOLD_BRIGHT}m\033[${TEXT_UNDERLINED}m\033[${COLOR_F_LIGHT_YELLOW}m"
-readonly STYLE_TITLE="\033[${TEXT_RESET_ALL_ATTRIBUTES}m\033[${TEXT_BOLD_BRIGHT}m\033[${COLOR_F_LIGHT_YELLOW}m"
-readonly STYLE_PLAIN="\033[${TEXT_RESET_ALL_ATTRIBUTES}m"
-
+# 输出标题
 print_title () {
-    echo -ne "${STYLE_TITLE}$1${STYLE_PLAIN}"
+    print_colored_text "$1" "${TEXT_BOLD_BRIGHT}" "${COLOR_F_LIGHT_GREEN}"
+    print_colored_text '' "$TEXT_RESET_ALL_ATTRIBUTES"
 }
 
-print_building_info_without_scroll_screen () {
-    while read -r line; do echo -ne "\033[1K\r\033[2mBuilding $line" ...; done; echo -ne "\033[0m"
+# 输出错误
+print_error () {
+    print_colored_text "$1" "$COLOR_F_LIGHT_RED"
+    print_colored_text '' "$TEXT_RESET_ALL_ATTRIBUTES"
 }
 
-print_without_scroll_screen () {
-    while read -r line; do echo -ne "\033[1K\r\033[2m$line"; done; echo -ne "\033[0m"
+# 在指定范围内滚动
+# 参考：https://zyxin.xyz/blog/2020-05/TerminalControlCharacters/
+print_scroll_in_range () {
+    # 默认最多显示滚动行数，默认为 8
+    local scroll_lines=${1:-8}
+    # 每行字符数，避免折行，默认 120
+    local chars_per_line=${2:-120}
+    local txt=''
+    local last_line_count=0
+    while read -r line; do
+        line=${line:0:$chars_per_line}
+        [[ "${last_line_count}" -gt "0" ]] && echo -ne "\033[${last_line_count}A"
+        if [[ -z "$txt" ]]; then
+            txt=$(echo -e "\033[2m$line\033[K" | tail -n"$scroll_lines")
+        else
+            txt=$(echo -e "$txt\n$line\033[K" | tail -n"$scroll_lines")
+        fi
+        last_line_count=$(( $(wc -l <<< "$txt") ))
+        echo "$txt"
+    done
+    echo -ne "\033[0m"
+}
+
+# 清理前面输出的指定行数
+clear_lines () {
+    local lines_count=${1:-}
+    [[ -z "$lines_count" ]] && return
+    echo -ne "\033[${lines_count}A"
+    for ((i=0; i<lines_count; i++)); do
+        echo -e "\033[K"
+    done
+    echo -ne "\033[${lines_count}A"
 }
 
 # go tool dist list 获取完整平台支持列表
@@ -151,7 +219,7 @@ go_build () {
         # 当前平台
         os=$(uname)
         arch=$(uname -m)
-        
+
         unset CGO_ENABLED
         unset GOOS
         unset GOARCH
@@ -171,27 +239,29 @@ go_build () {
     # 完整路径
     build_info="${build_info}\nFull Path = [$exe_file]"
     show_msg -e "$build_info"
-    
+
     local start
     local end
 
+    # 构建函数，根据执行脚本时指定的参数，决定在 go build 中是否也指定 -a 参数，进行完整构建
     do_build () {
-        if [[ "${COMPLETE_BUILD_ALL}" == "1" ]]; then
-            go build -v -a -o "$exe_file" "$main_module_path" 2>&1
+        if [[ "${FORCE_REBUILD}" == "1" ]]; then
+            go build "$@" -a -o "$exe_file" "$main_module_path"
         else
-            go build -v -o "$exe_file" "$main_module_path" 2>&1
+            go build "$@" -o "$exe_file" "$main_module_path"
         fi
     }
 
     start=$(date +%s)
     # 构建
     (
-        cd "$GO_MOD_ROOT" \
-        &&  do_build \
-        | print_building_info_without_scroll_screen 
-    )
-    echo | print_without_scroll_screen
-    
+        cd "$GO_MOD_ROOT" &&  do_build -v 2>&1 | print_scroll_in_range 5 && clear_lines 5
+    ) || {
+        print_error "\n\Some errors occurred during the build process. Exit wiht error code $?."
+        exit 2
+    }
+
+
     # 显示 SHA256
     build_info="SHA256 = $(openssl sha256 < "$exe_file")"
     show_msg -e "$build_info"
@@ -211,8 +281,8 @@ readonly platforms=(
 # android/amd64
 # android/arm
 # android/arm64
-#* darwin/amd64
-#* darwin/arm64
+darwin/amd64
+darwin/arm64
 # dragonfly/amd64
 # freebsd/386
 # freebsd/amd64
@@ -225,7 +295,7 @@ readonly platforms=(
 # linux/386
 linux/amd64
 # linux/arm
-# linux/arm64
+linux/arm64
 # linux/mips
 # linux/mips64
 # linux/mips64le
@@ -247,7 +317,7 @@ linux/amd64
 # plan9/amd64
 # plan9/arm
 # solaris/amd64
-#* windows/386
+windows/386
 windows/amd64
 # windows/arm
 # windows/arm64
@@ -272,18 +342,19 @@ echo "Source code path = [$PROJECT_ROOT], module ROOT = [$GO_MOD_ROOT]"
 
 startTime=$(date +%s)
 
+# 为每个 main_module 执行构建
 for main_module in "${MAIN_MODULE_PATH_LIST[@]}"; do
-    # 构建当前平台应用
-    echo
-    go_build "$main_module"
-    echo
-
     # 如果指定了多平台构建，则构建指定平台应用
-    if [[ "${COMPLETE_BUILD_ALL}" == "1" ]]; then
+    if [[ "${MULTI_PLATFORM_BUILD}" == "1" ]]; then
         for platform in "${platforms[@]}"; do
             echo
             go_build "$main_module" "$platform"
         done
+    else
+        # 构建当前平台应用
+        echo
+        go_build "$main_module"
+        echo
     fi
 done
 
