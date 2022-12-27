@@ -327,7 +327,7 @@ windows/amd64
 info=$(print_title "[Go Version Infomation]"
 echo
 go version
-echo "  GOBIN=$(greadlink -f go)"
+echo "  GOBIN=$(which go) -> $(greadlink -f "$(which go)")"
 echo "  GOVERSION=$(go env GOVERSION)"
 echo "  GOENV=$(go env GOENV)"
 echo "  GOPATH=$(go env GOPATH)"
