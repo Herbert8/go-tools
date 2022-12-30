@@ -27,7 +27,7 @@ USAGE:
 
 OPTIONS:
    -a               Force rebuilding of packages that are already up-to-date.
-   -c               Clean up the contents of the bbb folder.
+   -c               Clean up the contents of the "build" folder.
    -m               Multi-platform build.
    -h               Show help message.
 EOF
