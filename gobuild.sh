@@ -23,10 +23,11 @@ NAME:
    Go Build - A handy Go language build script.
 
 USAGE:
-   gobuild [-a] [-m]
+   gobuild [-a] [-c] [-m]
 
 OPTIONS:
    -a               Force rebuilding of packages that are already up-to-date.
+   -c               Clean up the contents of the bbb folder.
    -m               Multi-platform build.
    -h               Show help message.
 EOF
