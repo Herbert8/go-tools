@@ -139,9 +139,9 @@ go_build() {
     # 构建函数，根据执行脚本时指定的参数，决定在 go build 中是否也指定 -a 参数，进行完整构建
     do_build () {
         if [[ "${FORCE_REBUILD}" == "1" ]]; then
-            go build "$@" -a -o "$exe_file" "$main_module_path"
+            go build --ldflags="-s -w" "$@" -a -o "$exe_file" "$main_module_path"
         else
-            go build "$@" -o "$exe_file" "$main_module_path"
+            go build --ldflags="-s -w" "$@" -o "$exe_file" "$main_module_path"
         fi
     }
 
@@ -296,7 +296,7 @@ main() {
         # linux/386
         linux/amd64
         # linux/arm
-        # linux/arm64
+        linux/arm64
         # linux/mips
         # linux/mips64
         # linux/mips64le
@@ -319,9 +319,9 @@ main() {
         # plan9/arm
         # solaris/amd64
         # windows/386
-        # windows/amd64
+        windows/amd64
         # windows/arm
-        # windows/arm64
+        windows/arm64
     )
 
     # 加载工程自己定义的支持平台设置
