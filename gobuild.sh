@@ -33,9 +33,6 @@ OPTIONS:
 EOF
 }
 
-
-
-
 # 输出标题
 print_title() {
     print_colored_text "$1" "${TEXT_BOLD_BRIGHT}" "${COLOR_F_LIGHT_GREEN}"
@@ -48,40 +45,91 @@ print_error() {
     print_colored_text '' "$TEXT_RESET_ALL_ATTRIBUTES"
 }
 
-# 在指定范围内滚动
+# 函数：print_scroll_in_range
+# 功能：在终端窗口中以滚动形式显示输入文本，限制在指定的行数范围内
 # 参考：https://zyxin.xyz/blog/2020-05/TerminalControlCharacters/
 print_scroll_in_range() {
-    # 默认最多显示滚动行数，默认为 8
+    # 参数1：scroll_lines，最多显示的滚动行数，默认为8行
     local scroll_lines=${1:-8}
-    # 每行字符数，避免折行，默认 120
+    # 参数2：chars_per_line，每行的最大字符数，超过部分会被截断，默认为120字符
     local chars_per_line=${2:-120}
+
+    # txt：保存当前显示的所有文本内容
     local txt=''
+    # last_line_count：记录上次输出时的行数
     local last_line_count=0
+    # 用于标记是否开始记录 log
+    local need_start_log=0
+    # 最终要输出的文本
+    local final_output_message=''
+    # 从标准输入读取每一行内容
     while read -r line; do
+
+        # 如果是 # 开头，并且之前没有标记过（避免每次都处理字符串导致性能问题），则开始记录
+        if [[ $need_start_log -eq 0 && "$line" == '# '* ]]; then
+            need_start_log=1
+        fi
+
+        # 如果需要开始记录，则开始记录行信息
+        if [[ $need_start_log -eq 1 ]]; then
+            final_output_message="$final_output_message"$'\n'"$line"
+        fi
+
+        # 截取每一行的前 chars_per_line 个字符，避免超出宽度换行
         line=${line:0:$chars_per_line}
+
+        # 如果 last_line_count 大于 0，则将光标上移 last_line_count 行以覆盖旧内容
         [[ "${last_line_count}" -gt "0" ]] && echo -ne "\033[${last_line_count}A"
+
+        # 将新读取的行格式化并拼接到 txt
         if [[ -z "$txt" ]]; then
+            # 如果 txt 为空，初始化 txt，使用 ANSI 转义代码 \033[2m 设置为淡色，\033[K 清除行尾
             txt=$(echo -e "\033[2m$line\033[K" | tail -n"$scroll_lines")
         else
+            # 非第一行时，将新行追加到 txt，限制总行数为 scroll_lines
             txt=$(echo -e "$txt\n$line\033[K" | tail -n"$scroll_lines")
         fi
+
+        # 计算当前文本内容的行数
         last_line_count=$(($(wc -l <<<"$txt")))
+
+        # 输出更新后的文本内容
         echo "$txt"
     done
+
+    # 重置颜色
     echo -ne "\033[0m"
+
+    # 如果有输出的行数，调用 clear_scroll_lines 清除最后的显示
     if [[ "$last_line_count" -gt "0" ]]; then
-        clear_lines "$last_line_count"
+        clear_scroll_lines "$last_line_count"
     fi
+
+    if [[ -n "$final_output_message" ]]; then
+        print_error "$final_output_message"
+    fi
+
 }
 
-# 清理前面输出的指定行数
-clear_lines() {
+# 函数：clear_scroll_lines
+# 功能：在终端中清除指定数量的行，使输出区域变得干净
+clear_scroll_lines() {
+    # 参数1：lines_count，要清除的行数。如果未传入参数，默认值为空
     local lines_count=${1:-}
+
+    # 如果 lines_count 为空，则直接返回，不做任何操作
     [[ -z "$lines_count" ]] && return
+
+    # 将光标向上移动 lines_count 行
     echo -ne "\033[${lines_count}A"
+
+    # 逐行清除 lines_count 行内容
     for ((i = 0; i < lines_count; i++)); do
+        # \033[K 清除当前光标位置到行尾的内容
         echo -e "\033[K"
     done
+
+    # 将光标再次移动回起始位置
     echo -ne "\033[${lines_count}A"
 }
 
@@ -137,11 +185,11 @@ go_build() {
     local end
 
     # 构建函数，根据执行脚本时指定的参数，决定在 go build 中是否也指定 -a 参数，进行完整构建
-    do_build () {
+    do_build() {
         if [[ "${FORCE_REBUILD}" == "1" ]]; then
-            go build --ldflags="-s -w" "$@" -a -o "$exe_file" "$main_module_path"
+            go build --ldflags="-s -w -X 'main.buildTime=$(date +'%Y-%m-%d %H:%M:%S %z')'" "$@" -a -o "$exe_file" "$main_module_path"
         else
-            go build --ldflags="-s -w" "$@" -o "$exe_file" "$main_module_path"
+            go build --ldflags="-s -w -X 'main.buildTime=$(date +'%Y-%m-%d %H:%M:%S %z')'" "$@" -o "$exe_file" "$main_module_path"
         fi
     }
 
@@ -150,7 +198,7 @@ go_build() {
     (
         cd "$GO_MOD_ROOT" && do_build -v 2>&1 | print_scroll_in_range 5
     ) || {
-        print_error "\nSome errors occurred during the build process. Exit with error code $?."
+        # print_error "\nSome errors occurred during the build process. Exit with error code $?."
         exit 2
     }
 
@@ -165,7 +213,7 @@ go_build() {
 
 }
 
-go_clean_build () {
+go_clean_build() {
     local build_dir=$GO_MOD_ROOT/build
     echo "$build_dir"
     if [[ -d "$build_dir" ]]; then
@@ -184,8 +232,8 @@ main() {
     # -m 包括构建所有支持的平台
     # -c 清理已经构建的内容
     while getopts "acmh" opt_name; do # 通过循环，使用 getopts，按照指定参数列表进行解析，参数名存入 opt_name
-        case "$opt_name" in          # 根据参数名判断处理分支
-        'a')                         # -a 参数
+        case "$opt_name" in           # 根据参数名判断处理分支
+        'a')                          # -a 参数
             FORCE_REBUILD=1
             ;;
         'c')
@@ -244,7 +292,6 @@ main() {
     if [[ "$CLEAN_BUILD_DATA" -eq "1" ]]; then
         go_clean_build
     fi
-
 
     proj_name=$(basename "$GO_MOD_ROOT")
 
@@ -328,7 +375,6 @@ main() {
     local custom_supported_platform_config=$GO_MOD_ROOT/scripts/supported_platforms.sh
     [[ -f "$custom_supported_platform_config" ]] && source "$custom_supported_platform_config"
 
-
     # echo
     info=$(
         print_title "[Go Version Infomation]"
@@ -387,4 +433,3 @@ main() {
 }
 
 main "$@"
-
